@@ -28,19 +28,29 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach($result['schedule'] as $item)
+               @foreach($result['matches'] as $item)
                 <tr class="border-t border-slate-50 hover:bg-slate-50/50">
                     <td class="p-4">
-                        <p class="font-bold text-slate-800">{{ $item->subject->name }}</p>
-                        @if(in_array($item->subject_id, request('priority', [])))
+                        <p class="font-bold text-slate-800">{{ $item['subject']->name }}</p>
+                        @if(in_array($item['subject']->id, request('priority', [])))
                             <span class="text-[10px] bg-rose-100 text-rose-600 px-2 py-0.5 rounded-full font-bold">PRIORITY</span>
                         @endif
                     </td>
                     <td class="p-4">
-                        <span class="text-sm text-slate-600">{{ $item->day }}</span>
-                        <p class="text-xs font-mono text-indigo-500">{{ $item->start_time }} - {{ $item->end_time }}</p>
+                        @if($item['schedule'])
+                            <span class="text-sm text-slate-600">{{ $item['schedule']->day }}</span>
+                            <p class="text-xs font-mono text-indigo-500">{{ $item['schedule']->start_time }} - {{ $item['schedule']->end_time }}</p>
+                        @else
+                            <span class="text-sm text-red-600">Not scheduled</span>
+                        @endif
                     </td>
-                    <td class="p-4 text-sm text-slate-500">{{ $item->instructor->name }}</td>
+                    <td class="p-4 text-sm text-slate-500">
+                        @if($item['schedule'])
+                            {{ $item['schedule']->instructor->name }}
+                        @else
+                            -
+                        @endif
+                    </td>
                 </tr>
                 @endforeach
             </tbody>
@@ -49,8 +59,10 @@
         <div class="p-6 bg-slate-50 border-t flex justify-end">
             <form action="{{ route('student.enroll.bulk') }}" method="POST">
                 @csrf
-                @foreach($result['schedule'] as $item)
-                    <input type="hidden" name="schedule_ids[]" value="{{ $item->id }}">
+                @foreach($result['matches'] as $item)
+                    @if($item['schedule'])
+                        <input type="hidden" name="schedule_ids[]" value="{{ $item['schedule']->id }}">
+                    @endif
                 @endforeach
                 <button type="submit" class="bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition">
                     Confirm & Enroll All

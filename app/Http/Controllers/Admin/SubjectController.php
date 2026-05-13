@@ -5,54 +5,61 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Subject;
+use Illuminate\Support\Facades\Auth;
 
 class SubjectController extends Controller
 {
-    public function index()
-    {
-        // $subjects = Subject::all();
-        $subjects = \App\Models\Subject::with('requirement')
-        ->orderBy('year_level')
-        ->orderBy('semester')
-        ->get()
-        ->groupBy(['year_level', 'semester']);
-        return view('admin.subjects.index', compact('subjects'));
+
+public function index()
+{
+    $user = Auth::user();
+    $query = Subject::with('requirement');
+
+    // 1. Role-Based Filtering
+    // If the user is an admin (Department Head), show only their department's subjects.
+    // If the user is a superadmin, $query stays empty and shows ALL subjects.
+    if ($user->role === 'admin' && $user->department_id) {
+        $query->where('department_id', $user->department_id);
     }
 
-public function create()
-{
-    // We need all subjects so the Admin can pick which one is a pre-requisite
-    $subjects = Subject::orderBy('code')->get();
-    return view('admin.subjects.create', compact('subjects'));
+    // 2. Execute and Group
+    $subjects = $query->orderBy('year_level')
+        ->orderBy('semester')
+        ->orderBy('code')
+        ->get()
+        ->groupBy(fn($item) => (int)$item->year_level)
+        ->map(fn($year) => $year->groupBy(fn($item) => (int)$item->semester));
+
+    return view('admin.subjects.index', compact('subjects'));
 }
+    public function store(Request $request)
+    {
+        // Always validate first!
+        $request->validate([
+            'code' => 'required|unique:subjects,code',
+            'name' => 'required|min:2|max:100',
+            'units' => 'required|numeric',
+            'year_level' => 'required|integer|min:1|max:5',
+            'semester' => 'required|integer|min:1|max:2',
+        ]);
 
-// app/Http/Controllers/Admin/SubjectController.php
+        $data = $request->all();
+        $data['code'] = strtoupper($request->code);
 
-public function store(Request $request)
-{
-    // 1. Validation (Tells Laravel what is required)
-    $request->validate([
-        'code' => 'required|unique:subjects,code',
-        'name' => 'required|min:2|max:100',
-        'units' => 'required|numeric',
-        'year_level' => 'required|integer|min:1|max:4', 
-        'semester' => 'required|integer|min:1|max:2',   
-        'requirement_id' => 'nullable|exists:subjects,id',
-        'requirement_type' => 'required|in:pre,co,none',
-    ]);
+        // Assign department automatically if the admin belongs to one
+        $user = Auth::user();
+        if ($user && isset($user->department_id)) {
+            $data['department_id'] = $user->department_id;
+        }
 
-    // 2. Creation (Actually saves it to the DB)
-    Subject::create([
-        'code' => strtoupper($request->code),
-        'name' => $request->name,
-        'units' => $request->units,
-        'year_level' => $request->year_level, 
-        'semester' => $request->semester,     
-        'requirement_id' => $request->requirement_id,
-        'requirement_type' => $request->requirement_type,
-    ]);
+        Subject::create($data);
 
-    // 3. Redirect back to the organized list
-    return redirect()->route('admin.subjects.index')->with('success', 'Subject added successfully!');
-}
+        return redirect()->route('admin.subjects.index')->with('success', 'Subject added successfully!');
+    }
+
+    public function create()
+    {
+        $subjects = Subject::orderBy('code')->get();
+        return view('admin.subjects.create', compact('subjects'));
+    }
 }

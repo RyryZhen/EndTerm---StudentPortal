@@ -6,18 +6,21 @@ use Illuminate\Database\Eloquent\Model;
 
 class Schedule extends Model
 {
+
+
+
 protected $fillable = [
-    'subject_id', 
-    'instructor_id', 
-    'section', 
-    'year_level', // <--- ADD THIS
-    'semester',   // <--- ADD THIS
-    'day', 
-    'start_time', 
-    'end_time', 
+    'subject_id',
+    'section_id',
+    'instructor_id',
+    'section_name',
+    'year_level',
+    'semester',
+    'day',
+    'start_time',
+    'end_time',
     'room'
 ];
-
     // Get the subject for this schedule
     public function subject()
     {
@@ -29,4 +32,8 @@ protected $fillable = [
     {
         return $this->belongsTo(User::class, 'instructor_id');
     }
+
+    public function section() {
+    return $this->belongsTo(Section::class);
+}
 }

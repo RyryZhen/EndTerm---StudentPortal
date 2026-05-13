@@ -2,53 +2,75 @@
 
 namespace App\Http\Controllers;
 
+use Illuminate\Support\Facades\Auth;
 use App\Models\Enrollment;
 use App\Models\Schedule;
-use App\Services\EnrollmentService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use App\Http\Controllers\EnrollmentController;
+use Illuminate\Support\Facades\DB;
+
 
 class EnrollmentController extends Controller
 {
-    public function enroll($scheduleId, EnrollmentService $service)
+    /**
+     * Handle single enrollment (Quick Enroll)
+     */
+    public function enroll(Request $request, $scheduleId)
     {
-        $schedule = Schedule::findOrFail($scheduleId);
-
         $user = Auth::user();
+        
+        // Prevent duplicate enrollment for the same subject
+        $schedule = Schedule::findOrFail($scheduleId);
+        $alreadyEnrolled = Enrollment::where('user_id', $user->id)
+            ->whereHas('schedule', function($q) use ($schedule) {
+                $q->where('subject_id', $schedule->subject_id);
+            })->exists();
 
-        // CHECK CONFLICT
-        if ($service->hasConflict($user->id, $schedule)) {
-            return back()->with('error', 'Schedule conflict detected!');
+        if ($alreadyEnrolled) {
+            return redirect()->back()->with('error', 'You are already enrolled in this subject.');
         }
 
-        // ENROLL
         Enrollment::create([
             'user_id' => $user->id,
-            'schedule_id' => $schedule->id,
+            'schedule_id' => $scheduleId,
+            'status' => 'confirmed'
         ]);
 
-        return back()->with('success', 'Enrolled successfully!');
+        return redirect()->back()->with('success', 'Successfully enrolled!');
     }
+
+    /**
+     * Handle bulk enrollment from the Smart Scheduler
+     */
     public function bulkStore(Request $request)
-{
-    // Validate that we received IDs
-    $request->validate([
-        'schedule_ids' => 'required|array',
-        'schedule_ids.*' => 'exists:schedules,id'
-    ]);
+    {
+        $user = Auth::user();
+        $scheduleIds = $request->input('schedule_ids', []);
 
-    $studentId = auth()->id();
+        if (empty($scheduleIds)) {
+            return redirect()->route('student.planner')->with('error', 'No schedules selected.');
+        }
 
-    foreach ($request->schedule_ids as $scheduleId) {
-        // Prevent duplicate enrollments
-        Enrollment::firstOrCreate([
-            'user_id' => $studentId,
-            'schedule_id' => $scheduleId
-        ]);
+        try {
+            DB::transaction(function () use ($user, $scheduleIds) {
+                foreach ($scheduleIds as $id) {
+                    // Check if already enrolled in this specific schedule
+                    $exists = Enrollment::where('user_id', $user->id)
+                        ->where('schedule_id', $id)
+                        ->exists();
+
+                    if (!$exists) {
+                        Enrollment::create([
+                            'user_id' => $user->id,
+                            'schedule_id' => $id,
+                            'status' => 'confirmed'
+                        ]);
+                    }
+                }
+            });
+
+            return redirect()->route('student.dashboard')->with('success', 'Bulk enrollment successful!');
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', 'Something went wrong during enrollment.');
+        }
     }
-
-    return redirect()->route('student.dashboard')
-        ->with('success', 'Successfully enrolled in your generated schedule!');
-}
 }

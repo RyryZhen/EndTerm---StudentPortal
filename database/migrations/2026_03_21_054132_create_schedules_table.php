@@ -11,25 +11,23 @@ public function up(): void
     Schema::create('schedules', function (Blueprint $table) {
         $table->id();
 
-        $table->foreignId('subject_id')
-            ->constrained()
-            ->onDelete('cascade');
+        // Foreign Keys
+        $table->foreignId('subject_id')->constrained()->onDelete('cascade');
+        $table->foreignId('instructor_id')->constrained('users')->onDelete('cascade');
+        
+        // IMPORTANT: Only keep this if you have a 'sections' table migration 
+        // that runs BEFORE this file.
+        //$table->foreignId('section_id')->nullable()->constrained()->onDelete('cascade');
 
-        // Points to the users table for instructors
-        $table->foreignId('instructor_id')
-            ->constrained('users')
-            ->onDelete('cascade');
+        // Manual Data Columns
+        $table->string('section_name'); // Renamed to avoid conflict with the ID
+        $table->integer('year_level');  
+        $table->integer('semester');    
 
-        // --- ADD THESE THREE LINES BELOW ---
-        $table->string('section');      // To store 1A, 1B, 1C, etc.
-        $table->integer('year_level');  // To store 1, 2, 3, or 4
-        $table->integer('semester');    // To store 1 or 2
-        // ------------------------------------
-
+        // Time and Place
         $table->string('day');
         $table->time('start_time');
         $table->time('end_time');
-
         $table->string('room')->nullable();
 
         $table->timestamps();

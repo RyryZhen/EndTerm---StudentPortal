@@ -7,26 +7,40 @@ use Illuminate\Support\Facades\Auth;
 
 class TimetableService
 {
-    public function build($userId)
-    {
-        $enrollments = Enrollment::with('schedule.subject', 'schedule.instructor')
-            ->where('user_id', $userId)
-            ->get();
+public function build($userId)
+{
+    $enrollments = Enrollment::with('schedule.subject', 'schedule.instructor')
+        ->where('user_id', $userId)
+        ->get();
 
-        $timetable = [];
+    $timetable = [];
 
-        foreach ($enrollments as $en) {
-            $schedule = $en->schedule;
+    // Map short names to full names if your DB uses "Mon", "Tue", etc.
+    $dayMapping = [
+        'Mon' => 'Monday',
+        'Tue' => 'Tuesday',
+        'Wed' => 'Wednesday',
+        'Thu' => 'Thursday',
+        'Fri' => 'Friday',
+        'Sat' => 'Saturday',
+        'Sun' => 'Sunday',
+    ];
 
-            $timetable[$schedule->day][] = [
-                'subject' => $schedule->subject->name,
-                'start' => $schedule->start_time,
-                'end' => $schedule->end_time,
-                'instructor' => $schedule->instructor->name,
-                'room' => $schedule->room
-            ];
-        }
+    foreach ($enrollments as $en) {
+        $schedule = $en->schedule;
+        
+        // Use the mapping if it exists, otherwise use the raw value
+        $dayKey = $dayMapping[$schedule->day] ?? $schedule->day;
 
-        return $timetable;
+        $timetable[$dayKey][] = [
+            'subject' => $schedule->subject->name,
+            'start' => $schedule->start_time,
+            'end' => $schedule->end_time,
+            'instructor' => $schedule->instructor->name,
+            'room' => $schedule->room
+        ];
     }
+
+    return $timetable;
+}
 }

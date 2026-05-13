@@ -8,77 +8,94 @@ use Illuminate\Support\Facades\Auth;
 
 class ScheduleService
 {
-    public function generate($data)
-    {
-        $selectedSubjectIds = $data['subjects'] ?? [];
-        $priorityIds = $data['priority'] ?? [];
-        $preferredDays = $data['preferred_days'] ?? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        $startTimeLimit = $data['start_limit'] ?? '07:30';
-        $endTimeLimit = $data['end_limit'] ?? '18:00';
 
-        // 1. Fetch all possible schedules for selected subjects (1A, 1B, 1C etc)
-        $allSchedules = Schedule::with(['subject', 'instructor'])
-            ->whereIn('subject_id', $selectedSubjectIds)
-            ->get()
-            ->groupBy('subject_id');
+public function generate($data)
+{
+    $selectedSubjectIds = $data['subjects'] ?? [];
+    $priorityIds = $data['priority'] ?? [];
+    $preferredDays = $data['preferred_days'] ?? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    $startTimeLimit = $data['start_limit'] ?? '07:30';
+    $endTimeLimit = $data['end_limit'] ?? '18:00';
 
-        $finalSelection = [];
-        $warnings = [];
-        $isPerfect = true;
+    // Fetch selected subjects
+    $selectedSubjects = \App\Models\Subject::whereIn('id', $selectedSubjectIds)->get()->keyBy('id');
 
-        // 2. Loop through each subject the user wants
-        foreach ($selectedSubjectIds as $subjectId) {
-            $schedulesForSubject = $allSchedules->get($subjectId);
+    // 1. Fetch schedules
+    $allSchedules = Schedule::with(['subject', 'instructor'])
+        ->whereIn('subject_id', $selectedSubjectIds)
+        ->get()
+        ->groupBy('subject_id');
 
-            if (!$schedulesForSubject) {
-                $warnings[] = "No classes found for Subject ID: $subjectId";
-                continue;
+    $finalSelection = [];
+    $warnings = [];
+    $isPerfect = true;
+
+    // --- THE CRITICAL FIX: SORT BY PRIORITY ---
+    // This moves priority IDs to the front of the loop
+    $sortedSubjectIds = collect($selectedSubjectIds)->sortByDesc(function ($id) use ($priorityIds) {
+        return in_array($id, $priorityIds) ? 1 : 0;
+    });
+
+    // 2. Loop through sorted subjects
+    foreach ($sortedSubjectIds as $subjectId) {
+        $subject = $selectedSubjects->get($subjectId);
+        $schedulesForSubject = $allSchedules->get($subjectId);
+
+        if (!$schedulesForSubject) {
+            $warnings[] = "No classes found for {$subject->name}";
+            $finalSelection[] = ['subject' => $subject, 'schedule' => null];
+            continue;
+        }
+
+        $bestMatch = null;
+        $lowestPenalty = 999999;
+
+        foreach ($schedulesForSubject as $option) {
+            $penalty = 0;
+
+            // Priority Logic: If it's a priority subject, we treat day/time mismatches as heavy penalties
+            $isPriority = in_array($subjectId, $priorityIds);
+
+            // Penalty: Day Mismatch
+            if (!in_array($option->day, $preferredDays)) {
+                $penalty += $isPriority ? 10000 : 1000; 
             }
 
-            $bestMatch = null;
-            $lowestPenalty = 999999;
-
-            foreach ($schedulesForSubject as $option) {
-                $penalty = 0;
-
-                // Penalty: Wrong Day
-                if (!in_array($option->day, $preferredDays)) {
-                    $penalty += 1000;
-                }
-
-                // Penalty: Outside preferred hours
-                if ($option->start_time < $startTimeLimit || $option->end_time > $endTimeLimit) {
-                    $penalty += 500;
-                }
-
-                // Penalty: Time Conflict with already picked subjects
-                if ($this->hasConflict($option, $finalSelection)) {
-                    $penalty += 5000;
-                }
-
-                if ($penalty < $lowestPenalty) {
-                    $lowestPenalty = $penalty;
-                    $bestMatch = $option;
-                }
+            // Penalty: Time Mismatch
+            if ($option->start_time < $startTimeLimit || $option->end_time > $endTimeLimit) {
+                $penalty += $isPriority ? 5000 : 500;
             }
 
-            if ($bestMatch) {
-                $finalSelection[] = $bestMatch;
-                if ($lowestPenalty > 0) {
-                    $isPerfect = false;
-                    if ($lowestPenalty >= 5000) $warnings[] = "Conflict detected for {$bestMatch->subject->name}.";
-                    elseif ($lowestPenalty >= 1000) $warnings[] = "{$bestMatch->subject->name} falls on a non-preferred day ({$bestMatch->day}).";
-                }
+            // Penalty: Conflict (The "Dealbreaker")
+            if ($this->hasConflict($option, collect($finalSelection)->pluck('schedule')->filter()->all())) {
+                $penalty += 20000; // Extremely high to avoid overlapping
+            }
+
+            if ($penalty < $lowestPenalty) {
+                $lowestPenalty = $penalty;
+                $bestMatch = $option;
             }
         }
 
-        return [
-            'schedule' => $finalSelection,
-            'warnings' => $warnings,
-            'is_perfect' => $isPerfect
-        ];
+        if ($bestMatch && $lowestPenalty < 20000) {
+            $finalSelection[] = ['subject' => $subject, 'schedule' => $bestMatch];
+            if ($lowestPenalty > 0) {
+                $isPerfect = false;
+                if ($lowestPenalty >= 1000) $warnings[] = "{$subject->name} had to be placed on a non-preferred day to fit.";
+            }
+        } else {
+            $isPerfect = false;
+            $warnings[] = "Could not fit {$subject->name} due to scheduling conflicts.";
+            $finalSelection[] = ['subject' => $subject, 'schedule' => null];
+        }
     }
 
+    return [
+        'schedule' => $finalSelection,
+        'warnings' => $warnings,
+        'is_perfect' => $isPerfect
+    ];
+}
     private function hasConflict($newSched, $existingSelection)
     {
         foreach ($existingSelection as $existing) {

@@ -6,10 +6,11 @@ use Illuminate\Database\Eloquent\Model;
 
 class Enrollment extends Model
 {
-    protected $fillable = [
-        'user_id',
-        'schedule_id',
-    ];
+protected $fillable = [
+    'user_id',
+    'schedule_id',
+    'status',
+];
 
     public function student()
     {

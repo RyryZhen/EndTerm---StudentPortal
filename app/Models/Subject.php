@@ -8,16 +8,23 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Subject extends Model
 {
-   protected $fillable = [
-    'code', 
-    'name', 
-    'units', 
-    'year_level',     // Added: 1, 2, 3, or 4
-    'semester',       // Added: 1 or 2
-    'requirement_id', 
+protected $fillable = [
+    'code',
+    'name',
+    'units',
+    'year_level',
+    'semester',
+    'pre_req_code',
+    'department_id', // Ensure this is here!
+    'requirement_id',
     'requirement_type'
 ];
+// app/Models/Subject.php
 
+public function department()
+{
+    return $this->belongsTo(Department::class);
+}
     // Relationship to get the required subject (Pre-req or Co-req)
     public function requirement()
     {
